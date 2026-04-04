@@ -1,0 +1,159 @@
+/* ── Polyterm Trading Terminal ─────────────────────────────────── */
+
+Screen {
+    background: $surface;
+    layout: grid;
+    grid-size: 3 3;
+    grid-columns: 22 1fr 28;
+    grid-rows: 3 1fr 1fr;
+    grid-gutter: 0;
+}
+
+/* ── Status Bar (spans full width, row 1) ────────────────────── */
+
+StatusBarWidget {
+    column-span: 3;
+    height: 3;
+    background: $primary-darken-3;
+    color: $text;
+    padding: 0 1;
+    content-align: left middle;
+}
+
+/* ── Left Column (rows 2-3) ──────────────────────────────────── */
+
+MarketList {
+    row-span: 1;
+    background: $surface;
+    border-right: solid $primary-darken-2;
+    border-bottom: solid $primary-darken-2;
+    height: 100%;
+}
+
+OrderBookWidget {
+    background: $surface;
+    border-right: solid $primary-darken-2;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* ── Center Column ───────────────────────────────────────────── */
+
+PriceChartWidget {
+    background: $surface;
+    border-bottom: solid $primary-darken-2;
+    height: 100%;
+    padding: 0 1;
+}
+
+TradeTape {
+    background: $surface;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* ── Right Column ────────────────────────────────────────────── */
+
+OrderEntryPanel {
+    background: $surface;
+    border-left: solid $primary-darken-2;
+    border-bottom: solid $primary-darken-2;
+    height: 100%;
+    padding: 1;
+}
+
+PositionsTable {
+    column-span: 1;
+    background: $surface;
+    border-left: solid $primary-darken-2;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* ── Shared Widget Styles ────────────────────────────────────── */
+
+.panel-title {
+    text-style: bold;
+    color: $text-muted;
+    padding: 0 1;
+    text-align: left;
+    height: 1;
+    background: $surface-darken-1;
+}
+
+.bid-price {
+    color: $success;
+}
+
+.ask-price {
+    color: $error;
+}
+
+.pnl-positive {
+    color: $success;
+    text-style: bold;
+}
+
+.pnl-negative {
+    color: $error;
+    text-style: bold;
+}
+
+.spread-line {
+    color: $text-muted;
+    text-align: center;
+}
+
+/* ── Order Entry Styles ──────────────────────────────────────── */
+
+.buy-button {
+    background: $success;
+    color: $text;
+    width: 1fr;
+    min-width: 8;
+    margin: 0 1 0 0;
+    text-style: bold;
+}
+
+.buy-button:hover {
+    background: $success-lighten-1;
+}
+
+.sell-button {
+    background: $error;
+    color: $text;
+    width: 1fr;
+    min-width: 8;
+    text-style: bold;
+}
+
+.sell-button:hover {
+    background: $error-lighten-1;
+}
+
+.submit-button {
+    width: 100%;
+    margin: 1 0 0 0;
+    text-style: bold;
+}
+
+.order-input {
+    margin: 0 0 1 0;
+}
+
+.order-label {
+    height: 1;
+    padding: 0;
+    color: $text-muted;
+}
+
+/* ── DataTable Overrides ─────────────────────────────────────── */
+
+DataTable {
+    height: 100%;
+}
+
+DataTable > .datatable--header {
+    text-style: bold;
+    background: $surface-darken-1;
+}
