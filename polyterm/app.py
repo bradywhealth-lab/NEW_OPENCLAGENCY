@@ -258,17 +258,24 @@ class PolyTermApp(App):
         try:
             book = await self._client.get_order_book(token_id)
             self._data_store.update_book(token_id, book)
+            logger.info("Loaded order book for %s: %d bids, %d asks", token_id[:12], len(book.bids), len(book.asks))
+        except Exception as e:
+            logger.error("Order book fetch failed for %s: %s", token_id[:12], e)
 
+        try:
             history = await self._client.get_price_history(token_id)
             if history:
                 self._data_store.set_price_history(
                     token_id, [p.price for p in history]
                 )
-
-            self._refresh_book_ui()
-            self._refresh_chart_ui()
+                logger.info("Loaded %d price points for %s", len(history), token_id[:12])
+            else:
+                logger.warning("No price history returned for %s", token_id[:12])
         except Exception as e:
-            logger.debug("Initial data fetch failed: %s", e)
+            logger.error("Price history fetch failed for %s: %s", token_id[:12], e)
+
+        self._refresh_book_ui()
+        self._refresh_chart_ui()
 
     # ── WebSocket Callbacks ─────────────────────────────────────
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -105,10 +106,29 @@ class PolyClient:
 
         markets: list[Market] = []
         for m in raw:
-            tokens = m.get("clobTokenIds")
-            if not tokens:
+            tokens_raw = m.get("clobTokenIds")
+            if not tokens_raw:
                 continue
+
+            # Gamma API may return JSON-encoded strings or actual lists
+            if isinstance(tokens_raw, str):
+                try:
+                    tokens = json.loads(tokens_raw)
+                except (json.JSONDecodeError, ValueError):
+                    tokens = [tokens_raw]
+            else:
+                tokens = tokens_raw
+
+            if not isinstance(tokens, list) or not tokens:
+                continue
+
             prices_raw = m.get("outcomePrices", [])
+            if isinstance(prices_raw, str):
+                try:
+                    prices_raw = json.loads(prices_raw)
+                except (json.JSONDecodeError, ValueError):
+                    prices_raw = []
+
             prices = []
             for p in prices_raw:
                 try:
@@ -116,13 +136,20 @@ class PolyClient:
                 except (ValueError, TypeError):
                     prices.append(0.0)
 
+            outcomes_raw = m.get("outcomes", ["Yes", "No"])
+            if isinstance(outcomes_raw, str):
+                try:
+                    outcomes_raw = json.loads(outcomes_raw)
+                except (json.JSONDecodeError, ValueError):
+                    outcomes_raw = ["Yes", "No"]
+
             markets.append(
                 Market(
                     condition_id=m.get("conditionId", m.get("id", "")),
                     question=m.get("question", ""),
-                    outcomes=m.get("outcomes", ["Yes", "No"]),
+                    outcomes=outcomes_raw,
                     outcome_prices=prices,
-                    token_ids=tokens if isinstance(tokens, list) else [tokens],
+                    token_ids=tokens,
                     active=m.get("active", True),
                     volume=float(m.get("volume", 0) or 0),
                     end_date=m.get("endDate", ""),
@@ -188,9 +215,37 @@ class PolyClient:
                         )
                     elif isinstance(item, (int, float)):
                         points.append(PricePoint(timestamp=0, price=float(item)))
+
+            # If CLOB prices-history returned nothing, try Gamma timeseries
+            if not points:
+                points = await self._get_gamma_price_history(token_id)
+
             return points
         except Exception:
-            logger.debug("Price history fetch failed", exc_info=True)
+            logger.warning("Price history fetch failed for %s", token_id[:12], exc_info=True)
+            return await self._get_gamma_price_history(token_id)
+
+    async def _get_gamma_price_history(self, token_id: str) -> list[PricePoint]:
+        """Fallback: fetch price history from Gamma API timeseries."""
+        try:
+            resp = await self._http.get(
+                "/timeseries",
+                params={"market": token_id, "interval": "all", "fidelity": 60},
+            )
+            if resp.status_code != 200:
+                return []
+            raw = resp.json()
+            points: list[PricePoint] = []
+            data = raw if isinstance(raw, list) else raw.get("history", [])
+            for item in data:
+                if isinstance(item, dict):
+                    price = float(item.get("p", item.get("price", 0)))
+                    ts = float(item.get("t", item.get("timestamp", 0)))
+                    if price > 0:
+                        points.append(PricePoint(timestamp=ts, price=price))
+            return points
+        except Exception:
+            logger.debug("Gamma timeseries fallback also failed", exc_info=True)
             return []
 
     # ── Order Execution ─────────────────────────────────────────
