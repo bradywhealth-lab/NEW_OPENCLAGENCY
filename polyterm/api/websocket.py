@@ -9,7 +9,12 @@ import time
 from typing import Any, Callable, Coroutine
 
 import websockets
-from websockets.asyncio.client import ClientConnection
+
+try:
+    from websockets.asyncio.client import ClientConnection
+except ImportError:
+    # Older websockets versions
+    ClientConnection = None  # type: ignore[assignment,misc]
 
 from polyterm.config import Config
 
@@ -75,13 +80,13 @@ class WSManager:
         if self._market_ws:
             msg = json.dumps({
                 "assets_ids": list(new_ids),
-                "type": "subscribe",
+                "type": "market",
             })
             try:
                 await self._market_ws.send(msg)
-                logger.debug("Subscribed to %d new assets", len(new_ids))
-            except Exception:
-                logger.warning("Failed to send subscribe message")
+                logger.info("Subscribed to %d new assets", len(new_ids))
+            except Exception as e:
+                logger.warning("Failed to send subscribe message: %s", e)
 
     async def unsubscribe(self, asset_ids: list[str]) -> None:
         """Unsubscribe from market assets."""
@@ -135,80 +140,92 @@ class WSManager:
         url = self._config.ws_market_url
         logger.info("Connecting to market WebSocket: %s", url)
 
-        async with websockets.connect(url, ping_interval=None) as ws:
+        try:
+            ws = await websockets.connect(
+                url,
+                ping_interval=20,
+                ping_timeout=10,
+                close_timeout=5,
+                additional_headers={"Origin": "https://polymarket.com"},
+            )
+        except Exception as e:
+            logger.error("WebSocket connect failed: %s", e)
+            raise
+
+        try:
             self._market_ws = ws
 
             # Subscribe to tracked assets
             if self._subscribed_assets:
                 sub_msg = json.dumps({
                     "assets_ids": list(self._subscribed_assets),
-                    "type": "subscribe",
+                    "type": "market",
                 })
                 await ws.send(sub_msg)
                 logger.info("Subscribed to %d assets", len(self._subscribed_assets))
 
-            last_ping = time.monotonic()
-
-            while self._running:
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=PING_INTERVAL)
-                except asyncio.TimeoutError:
-                    # Send keepalive ping
-                    await ws.ping()
-                    last_ping = time.monotonic()
-                    continue
-
-                # Send periodic pings
-                if time.monotonic() - last_ping > PING_INTERVAL:
-                    await ws.ping()
-                    last_ping = time.monotonic()
-
+            async for raw in ws:
+                if not self._running:
+                    break
                 try:
                     data = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-
                 await self._dispatch_market_event(data)
-
-        self._market_ws = None
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning("Market WS closed: %s", e)
+        except Exception as e:
+            logger.error("Market WS error: %s", e)
+            raise
+        finally:
+            self._market_ws = None
+            try:
+                await ws.close()
+            except Exception:
+                pass
 
     async def _run_user_socket(self, api_creds: dict) -> None:
         """Connect to user channel for personal order/trade updates."""
         url = self._config.ws_user_url
         logger.info("Connecting to user WebSocket: %s", url)
 
-        async with websockets.connect(url, ping_interval=None) as ws:
-            self._user_ws = ws
+        try:
+            ws = await websockets.connect(
+                url,
+                ping_interval=20,
+                ping_timeout=10,
+                close_timeout=5,
+                additional_headers={"Origin": "https://polymarket.com"},
+            )
+        except Exception as e:
+            logger.error("User WS connect failed: %s", e)
+            raise
 
-            auth_msg = json.dumps({
-                "type": "subscribe",
-                "auth": api_creds,
-            })
+        try:
+            self._user_ws = ws
+            auth_msg = json.dumps({"type": "subscribe", "auth": api_creds})
             await ws.send(auth_msg)
 
-            last_ping = time.monotonic()
-
-            while self._running:
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=PING_INTERVAL)
-                except asyncio.TimeoutError:
-                    await ws.ping()
-                    last_ping = time.monotonic()
-                    continue
-
-                if time.monotonic() - last_ping > PING_INTERVAL:
-                    await ws.ping()
-                    last_ping = time.monotonic()
-
+            async for raw in ws:
+                if not self._running:
+                    break
                 try:
                     data = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-
                 if self._on_user_event:
                     await self._on_user_event(data)
-
-        self._user_ws = None
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning("User WS closed: %s", e)
+        except Exception as e:
+            logger.error("User WS error: %s", e)
+            raise
+        finally:
+            self._user_ws = None
+            try:
+                await ws.close()
+            except Exception:
+                pass
 
     # ── Event Dispatch ──────────────────────────────────────────
 

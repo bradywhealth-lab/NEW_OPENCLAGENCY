@@ -18,6 +18,7 @@ from py_clob_client.clob_types import (
 )
 from py_clob_client.order_builder.constants import BUY, SELL
 
+from polyterm.api.gamma_utils import parse_json_field, parse_outcome_prices, parse_token_ids
 from polyterm.api.models import (
     BookLevel,
     Market,
@@ -106,48 +107,18 @@ class PolyClient:
 
         markets: list[Market] = []
         for m in raw:
-            tokens_raw = m.get("clobTokenIds")
-            if not tokens_raw:
+            tokens = parse_token_ids(m)
+            if not tokens:
                 continue
 
-            # Gamma API may return JSON-encoded strings or actual lists
-            if isinstance(tokens_raw, str):
-                try:
-                    tokens = json.loads(tokens_raw)
-                except (json.JSONDecodeError, ValueError):
-                    tokens = [tokens_raw]
-            else:
-                tokens = tokens_raw
-
-            if not isinstance(tokens, list) or not tokens:
-                continue
-
-            prices_raw = m.get("outcomePrices", [])
-            if isinstance(prices_raw, str):
-                try:
-                    prices_raw = json.loads(prices_raw)
-                except (json.JSONDecodeError, ValueError):
-                    prices_raw = []
-
-            prices = []
-            for p in prices_raw:
-                try:
-                    prices.append(float(p))
-                except (ValueError, TypeError):
-                    prices.append(0.0)
-
-            outcomes_raw = m.get("outcomes", ["Yes", "No"])
-            if isinstance(outcomes_raw, str):
-                try:
-                    outcomes_raw = json.loads(outcomes_raw)
-                except (json.JSONDecodeError, ValueError):
-                    outcomes_raw = ["Yes", "No"]
+            prices = parse_outcome_prices(m)
+            outcomes = parse_json_field(m.get("outcomes"), ["Yes", "No"])
 
             markets.append(
                 Market(
                     condition_id=m.get("conditionId", m.get("id", "")),
                     question=m.get("question", ""),
-                    outcomes=outcomes_raw,
+                    outcomes=outcomes,
                     outcome_prices=prices,
                     token_ids=tokens,
                     active=m.get("active", True),

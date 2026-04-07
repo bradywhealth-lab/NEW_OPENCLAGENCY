@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from polyterm.api.gamma_utils import parse_outcome_prices, parse_token_ids
+
 logger = logging.getLogger(__name__)
 
 CLOB_HOST = "https://clob.polymarket.com"
@@ -148,23 +150,20 @@ class ArbitrageScanner:
 
     async def _check_market(self, market: dict) -> ArbitrageOpportunity | None:
         """Check a single market for arbitrage."""
-        tokens = market.get("clobTokenIds", [])
-        if not isinstance(tokens, list) or len(tokens) < 2:
+        tokens = parse_token_ids(market)
+        if len(tokens) < 2:
             return None
 
-        prices_raw = market.get("outcomePrices", [])
-        if len(prices_raw) < 2:
+        prices = parse_outcome_prices(market)
+        if len(prices) < 2:
             return None
 
         volume = float(market.get("volume", 0) or 0)
         if volume < self.min_volume:
             return None
 
-        try:
-            yes_price = float(prices_raw[0])
-            no_price = float(prices_raw[1])
-        except (ValueError, TypeError, IndexError):
-            return None
+        yes_price = prices[0]
+        no_price = prices[1]
 
         if yes_price <= 0 or no_price <= 0:
             return None

@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 
 import httpx
 
+from polyterm.api.gamma_utils import parse_outcome_prices, parse_token_ids
+
 logger = logging.getLogger(__name__)
 
 GAMMA_HOST = "https://gamma-api.polymarket.com"
@@ -138,18 +140,15 @@ class EventResolutionScanner:
         Look for markets where one side is 0.85-0.94 (not yet at 0.95+).
         If the outcome looks certain, buying at 0.90 gives 10% return.
         """
-        tokens = market.get("clobTokenIds", [])
-        prices_raw = market.get("outcomePrices", [])
+        tokens = parse_token_ids(market)
+        prices = parse_outcome_prices(market)
         volume = float(market.get("volume", 0) or 0)
 
-        if volume < self.min_volume or len(tokens) < 2 or len(prices_raw) < 2:
+        if volume < self.min_volume or len(tokens) < 2 or len(prices) < 2:
             return None
 
-        try:
-            yes_price = float(prices_raw[0])
-            no_price = float(prices_raw[1])
-        except (ValueError, TypeError):
-            return None
+        yes_price = prices[0]
+        no_price = prices[1]
 
         # Check if one side is strongly favored but not fully priced in
         end_date = market.get("endDate", "")
@@ -209,11 +208,10 @@ class EventResolutionScanner:
         These are goldmines: the outcome is known, but the market
         hasn't settled yet. Buy the winning side for near-guaranteed profit.
         """
-        tokens = market.get("clobTokenIds", [])
-        prices_raw = market.get("outcomePrices", [])
-        volume = float(market.get("volume", 0) or 0)
+        tokens = parse_token_ids(market)
+        prices = parse_outcome_prices(market)
 
-        if len(tokens) < 2 or len(prices_raw) < 2:
+        if len(tokens) < 2 or len(prices) < 2:
             return None
 
         end_date = market.get("endDate", "")
@@ -223,11 +221,8 @@ class EventResolutionScanner:
         if hours_left > 0:
             return None
 
-        try:
-            yes_price = float(prices_raw[0])
-            no_price = float(prices_raw[1])
-        except (ValueError, TypeError):
-            return None
+        yes_price = prices[0]
+        no_price = prices[1]
 
         # If market is expired and one side is strongly favored but not at $1
         if yes_price >= 0.80 and yes_price < 0.99:

@@ -18,6 +18,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from polyterm.api.gamma_utils import parse_outcome_prices, parse_token_ids
+
 logger = logging.getLogger(__name__)
 
 GAMMA_HOST = "https://gamma-api.polymarket.com"
@@ -165,17 +167,14 @@ class WeatherEdgeScanner:
     async def _analyze_market(self, market: dict) -> WeatherEdge | None:
         """Analyze a weather market against real forecast data."""
         question = market.get("question", "")
-        tokens = market.get("clobTokenIds", [])
-        prices_raw = market.get("outcomePrices", [])
+        tokens = parse_token_ids(market)
+        prices = parse_outcome_prices(market)
         volume = float(market.get("volume", 0) or 0)
 
-        if volume < self.min_volume or len(tokens) < 2 or len(prices_raw) < 2:
+        if volume < self.min_volume or len(tokens) < 2 or len(prices) < 2:
             return None
 
-        try:
-            yes_price = float(prices_raw[0])
-        except (ValueError, TypeError):
-            return None
+        yes_price = prices[0]
 
         # Detect city
         city = self._detect_city(question)
