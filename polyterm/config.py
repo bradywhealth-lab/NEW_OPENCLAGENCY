@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Config:
     """Immutable application configuration."""
 

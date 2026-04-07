@@ -53,7 +53,7 @@ PRICE_PATTERNS = [
 ]
 
 
-@dataclass(slots=True)
+@dataclass()
 class CryptoEdge:
     """A detected crypto price mispricing."""
 

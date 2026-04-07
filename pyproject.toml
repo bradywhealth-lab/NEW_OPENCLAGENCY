@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "polyterm"
 version = "0.1.0"
 description = "Lightweight Polymarket CLOB trading terminal"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "textual>=0.79.0",
     "py-clob-client>=0.18.0",

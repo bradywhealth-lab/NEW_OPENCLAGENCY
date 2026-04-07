@@ -52,7 +52,7 @@ TEMP_PATTERNS = [
 ]
 
 
-@dataclass(slots=True)
+@dataclass()
 class WeatherEdge:
     """A detected weather market mispricing."""
 

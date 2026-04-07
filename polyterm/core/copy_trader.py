@@ -19,7 +19,7 @@ DATA_API = "https://data-api.polymarket.com"
 GAMMA_API = "https://gamma-api.polymarket.com"
 
 
-@dataclass(slots=True)
+@dataclass()
 class CopyTradeEvent:
     """A trade detected on the target wallet that should be mirrored."""
 
@@ -33,7 +33,7 @@ class CopyTradeEvent:
     condition_id: str = ""
 
 
-@dataclass(slots=True)
+@dataclass()
 class CopyTradeConfig:
     """Configuration for copy trading behavior."""
 

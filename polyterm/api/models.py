@@ -29,7 +29,7 @@ class OrderStatus(str, Enum):
 # ── Market ──────────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass()
 class Market:
     condition_id: str
     question: str
@@ -59,13 +59,13 @@ class Market:
 # ── Order Book ──────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass()
 class BookLevel:
     price: float
     size: float
 
 
-@dataclass(slots=True)
+@dataclass()
 class OrderBook:
     bids: list[BookLevel] = field(default_factory=list)
     asks: list[BookLevel] = field(default_factory=list)
@@ -95,7 +95,7 @@ class OrderBook:
 # ── Trade ───────────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass()
 class Trade:
     price: float
     size: float
@@ -108,7 +108,7 @@ class Trade:
 # ── Price Point ─────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass()
 class PricePoint:
     timestamp: float
     price: float
@@ -117,7 +117,7 @@ class PricePoint:
 # ── Order ───────────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass()
 class Order:
     order_id: str
     token_id: str
@@ -137,7 +137,7 @@ class Order:
 # ── Position ────────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass()
 class Position:
     token_id: str
     size: float
@@ -168,7 +168,7 @@ class Position:
 # ── Price Quote ─────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass()
 class PriceQuote:
     bid: float = 0.0
     ask: float = 0.0

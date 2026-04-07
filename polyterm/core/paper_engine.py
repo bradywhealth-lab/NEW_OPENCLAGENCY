@@ -22,7 +22,7 @@ from polyterm.core.market_data import MarketDataStore
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@dataclass()
 class PaperFill:
     """Record of a simulated fill."""
 

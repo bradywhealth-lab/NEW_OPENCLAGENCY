@@ -30,7 +30,7 @@ GAMMA_HOST = "https://gamma-api.polymarket.com"
 COINGECKO_API = "https://api.coingecko.com/api/v3"
 
 
-@dataclass(slots=True)
+@dataclass()
 class ResolutionEdge:
     """A market where the outcome appears already determined."""
 

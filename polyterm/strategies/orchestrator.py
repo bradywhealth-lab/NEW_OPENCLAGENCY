@@ -25,7 +25,7 @@ from polyterm.strategies.weather_edge import WeatherEdge, WeatherEdgeScanner
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@dataclass()
 class TradeSignal:
     """A recommended trade from the orchestrator."""
 

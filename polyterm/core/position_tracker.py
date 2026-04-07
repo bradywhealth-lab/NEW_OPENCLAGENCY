@@ -13,7 +13,7 @@ from polyterm.core.market_data import MarketDataStore
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@dataclass()
 class PnLSummary:
     unrealized: float = 0.0
     realized: float = 0.0

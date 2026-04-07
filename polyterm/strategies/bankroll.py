@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@dataclass()
 class BetRecommendation:
     """What the bankroll manager recommends for a specific opportunity."""
 

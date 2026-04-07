@@ -26,7 +26,7 @@ CLOB_HOST = "https://clob.polymarket.com"
 GAMMA_HOST = "https://gamma-api.polymarket.com"
 
 
-@dataclass(slots=True)
+@dataclass()
 class ArbitrageOpportunity:
     """A detected arbitrage opportunity."""
 
