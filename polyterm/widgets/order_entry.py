@@ -127,7 +127,7 @@ class OrderEntryPanel(Static):
         status.update(f"[{style}]{text}[/]")
 
     @on(Button.Pressed, "#buy-btn")
-    def _select_buy(self) -> None:
+    def _select_buy(self, event: Button.Pressed | None = None) -> None:
         self._side = Side.BUY
         self.query_one("#buy-btn", Button).set_classes("active-buy")
         self.query_one("#sell-btn", Button).set_classes("inactive-side")
@@ -135,7 +135,7 @@ class OrderEntryPanel(Static):
         self.query_one("#submit-btn", Button).label = "SUBMIT BUY"
 
     @on(Button.Pressed, "#sell-btn")
-    def _select_sell(self) -> None:
+    def _select_sell(self, event: Button.Pressed | None = None) -> None:
         self._side = Side.SELL
         self.query_one("#sell-btn", Button).set_classes("active-sell")
         self.query_one("#buy-btn", Button).set_classes("inactive-side")
@@ -143,28 +143,43 @@ class OrderEntryPanel(Static):
         self.query_one("#submit-btn", Button).label = "SUBMIT SELL"
 
     @on(Button.Pressed, "#submit-btn")
-    def _submit(self) -> None:
+    def _submit(self, event: Button.Pressed | None = None) -> None:
         price_input = self.query_one("#price-input", Input)
         size_input = self.query_one("#size-input", Input)
         type_select = self.query_one("#type-select", Select)
 
+        price_str = price_input.value.strip()
+        size_str = size_input.value.strip()
+
+        if not price_str or not size_str:
+            self.set_status("Enter price and size", "bold red")
+            return
+
         try:
-            price = float(price_input.value)
-            size = float(size_input.value)
+            price = float(price_str)
+            size = float(size_str)
         except (ValueError, TypeError):
             self.set_status("Invalid price or size", "bold red")
             return
 
         if price <= 0 or price >= 1:
-            self.set_status("Price must be 0 < p < 1", "bold red")
+            self.set_status("Price must be between 0 and 1", "bold red")
             return
         if size <= 0:
             self.set_status("Size must be > 0", "bold red")
             return
 
-        order_type = OrderType(type_select.value) if type_select.value else OrderType.GTC
+        # Safely get order type — handle Select.BLANK
+        try:
+            sel_val = type_select.value
+            order_type = OrderType(sel_val) if sel_val and sel_val is not Select.BLANK else OrderType.GTC
+        except (ValueError, KeyError):
+            order_type = OrderType.GTC
 
-        self.set_status("Submitting...", "bold yellow")
+        self.set_status(
+            f"Submitting {self._side.value} {size:.1f} @ {price:.4f}...",
+            "bold yellow",
+        )
         self.post_message(
             OrderSubmitted(
                 side=self._side,

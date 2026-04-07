@@ -24,13 +24,15 @@ logger = logging.getLogger(__name__)
 
 GAMMA_HOST = "https://gamma-api.polymarket.com"
 NWS_API = "https://api.weather.gov"
+# OpenMeteo free API for international cities (no key needed)
+OPENMETEO_API = "https://api.open-meteo.com/v1/forecast"
 
-# Major city coordinates for NWS grid lookups
+# Major city coordinates — US cities use NWS, international use OpenMeteo
 CITY_COORDS = {
+    # US cities (NWS)
     "new york": (40.7128, -74.0060),
     "nyc": (40.7128, -74.0060),
     "los angeles": (34.0522, -118.2437),
-    "la": (34.0522, -118.2437),
     "chicago": (41.8781, -87.6298),
     "miami": (25.7617, -80.1918),
     "houston": (29.7604, -95.3698),
@@ -41,16 +43,32 @@ CITY_COORDS = {
     "boston": (42.3601, -71.0589),
     "atlanta": (33.7490, -84.3880),
     "san francisco": (37.7749, -122.4194),
-    "sf": (37.7749, -122.4194),
     "washington": (38.9072, -77.0369),
-    "dc": (38.9072, -77.0369),
+    # International cities (OpenMeteo)
+    "london": (51.5074, -0.1278),
+    "paris": (48.8566, 2.3522),
+    "tokyo": (35.6762, 139.6503),
+    "sydney": (-33.8688, 151.2093),
+    "toronto": (43.6532, -79.3832),
+    "dubai": (25.2048, 55.2708),
+    "mumbai": (19.0760, 72.8777),
+    "singapore": (1.3521, 103.8198),
+    "riyadh": (24.7136, 46.6753),
 }
 
-# Temperature extraction patterns
+# US cities that can use NWS API
+US_CITIES = {
+    "new york", "nyc", "los angeles", "chicago", "miami", "houston",
+    "phoenix", "dallas", "denver", "seattle", "boston", "atlanta",
+    "san francisco", "washington",
+}
+
+# Temperature extraction patterns — require explicit degree/unit markers
 TEMP_PATTERNS = [
-    re.compile(r"(\d+)\s*°?\s*[fF]", re.I),
-    re.compile(r"(?:above|over|exceed|higher than|≥)\s*(\d+)", re.I),
-    re.compile(r"(?:below|under|lower than|≤)\s*(\d+)", re.I),
+    re.compile(r"(\d+)\s*°\s*[fFcC]", re.I),         # 80°F, 16°C
+    re.compile(r"(\d+)\s*degrees?\s*[fFcC]", re.I),   # 80 degrees F
+    re.compile(r"(?:above|over|exceed|higher than|≥)\s*(\d+)\s*°", re.I),
+    re.compile(r"(?:below|under|lower than|≤)\s*(\d+)\s*°", re.I),
 ]
 
 
@@ -186,7 +204,11 @@ class WeatherEdgeScanner:
         if not threshold:
             return None
 
-        # Fetch actual forecast
+        # Convert °C to °F if the question uses Celsius (forecasts are in °F)
+        is_celsius = "°c" in question.lower() or "celsius" in question.lower()
+        threshold_f = threshold * 9.0 / 5.0 + 32 if is_celsius else threshold
+
+        # Fetch actual forecast (returns °F)
         forecast = await self._get_forecast(city)
         if not forecast:
             return None
@@ -196,7 +218,7 @@ class WeatherEdgeScanner:
         estimated_prob = self._estimate_temp_probability(
             forecast_high=forecast.get("high"),
             forecast_low=forecast.get("low"),
-            threshold=threshold,
+            threshold=threshold_f,
             is_above=is_above,
         )
 
@@ -239,7 +261,9 @@ class WeatherEdgeScanner:
         """Detect which city a weather question refers to."""
         q_lower = question.lower()
         for city_name in CITY_COORDS:
-            if city_name in q_lower:
+            # Use word boundary matching to avoid "la" matching "zealand"
+            pattern = r'\b' + re.escape(city_name) + r'\b'
+            if re.search(pattern, q_lower):
                 return city_name
         return None
 
@@ -252,12 +276,18 @@ class WeatherEdgeScanner:
         return None
 
     async def _get_forecast(self, city: str) -> dict | None:
-        """Get NWS forecast for a city. Returns {high, low}."""
+        """Get forecast for a city. Uses NWS for US, OpenMeteo for international."""
         coords = CITY_COORDS.get(city)
         if not coords:
             return None
 
-        # Get NWS grid point
+        if city in US_CITIES:
+            return await self._get_nws_forecast(city, coords)
+        else:
+            return await self._get_openmeteo_forecast(city, coords)
+
+    async def _get_nws_forecast(self, city: str, coords: tuple) -> dict | None:
+        """Get NWS forecast for a US city. Returns {high, low}."""
         cache_key = f"{coords[0]},{coords[1]}"
         if cache_key not in self._nws_grid_cache:
             try:
@@ -285,10 +315,9 @@ class WeatherEdgeScanner:
             if not periods:
                 return None
 
-            # Get today/tomorrow's forecast
             high = None
             low = None
-            for period in periods[:4]:  # Check first 4 periods (today/tonight/tomorrow)
+            for period in periods[:4]:
                 temp = period.get("temperature")
                 is_day = period.get("isDaytime", True)
                 if temp is not None:
@@ -302,6 +331,32 @@ class WeatherEdgeScanner:
 
         except Exception as e:
             logger.debug("NWS forecast fetch failed for %s: %s", city, e)
+
+        return None
+
+    async def _get_openmeteo_forecast(self, city: str, coords: tuple) -> dict | None:
+        """Get OpenMeteo forecast for international cities. Returns {high, low} in °F."""
+        try:
+            resp = await self._http.get(
+                OPENMETEO_API,
+                params={
+                    "latitude": coords[0],
+                    "longitude": coords[1],
+                    "daily": "temperature_2m_max,temperature_2m_min",
+                    "temperature_unit": "fahrenheit",
+                    "forecast_days": 3,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            daily = data.get("daily", {})
+            highs = daily.get("temperature_2m_max", [])
+            lows = daily.get("temperature_2m_min", [])
+
+            if highs and lows:
+                return {"high": float(highs[0]), "low": float(lows[0])}
+        except Exception as e:
+            logger.debug("OpenMeteo forecast failed for %s: %s", city, e)
 
         return None
 

@@ -48,10 +48,11 @@ CRYPTO_MAP = {
 
 # Regex to extract price thresholds from market questions
 PRICE_PATTERNS = [
-    re.compile(r"(?:above|over|exceed|higher than|≥|>=?)\s*\$?([\d,]+(?:\.\d+)?k?)", re.I),
-    re.compile(r"(?:below|under|lower than|≤|<=?)\s*\$?([\d,]+(?:\.\d+)?k?)", re.I),
-    re.compile(r"(?:reach|hit|touch)\s*\$?([\d,]+(?:\.\d+)?k?)", re.I),
-    re.compile(r"\$?([\d,]+(?:\.\d+)?k?)\s*(?:or more|or higher|or above|\+)", re.I),
+    re.compile(r"(?:above|over|exceed|higher than|≥|>=?)\s*\$?([\d,]+(?:\.\d+)?[kmb]?)", re.I),
+    re.compile(r"(?:below|under|lower than|≤|<=?)\s*\$?([\d,]+(?:\.\d+)?[kmb]?)", re.I),
+    re.compile(r"(?:reach|hit|touch)\s*\$?([\d,]+(?:\.\d+)?[kmb]?)", re.I),
+    re.compile(r"\$([\d,]+(?:\.\d+)?[kmb]?)\b", re.I),  # plain $100k, $1m
+    re.compile(r"\$?([\d,]+(?:\.\d+)?[kmb]?)\s*(?:or more|or higher|or above|\+)", re.I),
 ]
 
 
@@ -256,7 +257,8 @@ class CryptoEdgeScanner:
         """Detect which cryptocurrency a market question is about."""
         q_lower = question.lower()
         for name, _ in CRYPTO_MAP.items():
-            if name in q_lower:
+            # Word boundary match to avoid false positives
+            if re.search(r'\b' + re.escape(name) + r'\b', q_lower):
                 return name
         return None
 
@@ -266,8 +268,13 @@ class CryptoEdgeScanner:
             match = pattern.search(question)
             if match:
                 val_str = match.group(1).replace(",", "")
-                if val_str.lower().endswith("k"):
-                    return float(val_str[:-1]) * 1000
+                suffix = val_str[-1].lower() if val_str else ""
+                if suffix == "k":
+                    return float(val_str[:-1]) * 1_000
+                elif suffix == "m":
+                    return float(val_str[:-1]) * 1_000_000
+                elif suffix == "b":
+                    return float(val_str[:-1]) * 1_000_000_000
                 return float(val_str)
         return None
 

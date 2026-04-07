@@ -310,10 +310,17 @@ class PolyTermApp(App):
 
     @on(OrderSubmitted)
     async def _on_order_submitted(self, event: OrderSubmitted) -> None:
+        entry = self.query_one(OrderEntryPanel)
+
         if not self._active_token:
-            entry = self.query_one(OrderEntryPanel)
-            entry.set_status("No market selected", "bold red")
+            entry.set_status("No market selected — pick a market first", "bold red")
             return
+
+        logger.info(
+            "Order submitted: %s %s %.1f @ %.4f (token=%s)",
+            event.side.value, event.order_type.value, event.size, event.price,
+            self._active_token[:12],
+        )
 
         if self._paper:
             self._execute_paper_order(event)
@@ -323,20 +330,31 @@ class PolyTermApp(App):
     def _execute_paper_order(self, event: OrderSubmitted) -> None:
         """Execute order through paper trading engine."""
         entry = self.query_one(OrderEntryPanel)
-        success, result = self._paper.place_order(
-            token_id=self._active_token,
-            side=event.side,
-            price=event.price,
-            size=event.size,
-            order_type=event.order_type,
-        )
-        if success:
-            entry.set_status(
-                f"[PAPER] Order placed: {result[:16]} | Bal: ${self._paper.balance:,.2f}",
-                "bold green",
+        try:
+            success, result = self._paper.place_order(
+                token_id=self._active_token,
+                side=event.side,
+                price=event.price,
+                size=event.size,
+                order_type=event.order_type,
             )
-        else:
-            entry.set_status(f"[PAPER] Failed: {result}", "bold red")
+            if success:
+                # Show fill info
+                pos_count = len(self._paper.positions)
+                entry.set_status(
+                    f"[PAPER] {event.side.value} {event.size:.1f} @ {event.price:.4f} — "
+                    f"Bal: ${self._paper.balance:,.2f} | Positions: {pos_count}",
+                    "bold green",
+                )
+                logger.info("[PAPER] Order success: %s, balance: %.2f", result, self._paper.balance)
+                # Force immediate position refresh
+                self._refresh_paper_positions()
+            else:
+                entry.set_status(f"[PAPER] Failed: {result}", "bold red")
+                logger.warning("[PAPER] Order failed: %s", result)
+        except Exception as e:
+            entry.set_status(f"[PAPER] Error: {e}", "bold red")
+            logger.error("[PAPER] Order error: %s", e, exc_info=True)
 
     @work(thread=False)
     async def _execute_order(self, event: OrderSubmitted) -> None:
