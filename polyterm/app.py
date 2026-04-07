@@ -25,6 +25,8 @@ from polyterm.core.market_data import MarketDataStore
 from polyterm.core.order_manager import OrderManager
 from polyterm.core.paper_engine import PaperTradingEngine
 from polyterm.core.position_tracker import PnLSummary, PositionTracker
+from polyterm.strategies.bankroll import BankrollManager
+from polyterm.strategies.orchestrator import StrategyOrchestrator, TradeSignal
 from polyterm.widgets.market_list import MarketList, MarketSelected
 from polyterm.widgets.order_book import OrderBookWidget
 from polyterm.widgets.order_entry import CancelAllRequested, OrderEntryPanel, OrderSubmitted
@@ -51,6 +53,7 @@ class PolyTermApp(App):
         Binding("s", "focus_sell", "Sell", show=False),
         Binding("r", "refresh_positions", "Refresh", show=False),
         Binding("escape", "clear_form", "Clear", show=False),
+        Binding("f", "scan_edges", "Scan", show=False),
     ]
 
     def __init__(self) -> None:
@@ -79,6 +82,16 @@ class PolyTermApp(App):
                 self._data_store,
                 starting_balance=self._config.paper_balance,
             )
+
+        # Strategy bot
+        starting_bal = self._config.paper_balance if self._paper else 100.0
+        self._bankroll = BankrollManager(bankroll=starting_bal)
+        self._orchestrator = StrategyOrchestrator(
+            bankroll_manager=self._bankroll,
+            on_signal=self._handle_trade_signal,
+            scan_interval_s=60.0,
+            auto_execute=False,  # always notify first
+        )
 
         # Copy trader
         self._copy_trader: CopyTrader | None = None
@@ -147,8 +160,12 @@ class PolyTermApp(App):
         if self._copy_trader:
             self._start_copy_trader()
 
+        # Start strategy scanner
+        self._start_orchestrator()
+
     async def on_unmount(self) -> None:
         """Clean shutdown."""
+        await self._orchestrator.stop()
         if self._copy_trader:
             await self._copy_trader.stop()
         await self._ws_mgr.stop()
@@ -365,6 +382,56 @@ class PolyTermApp(App):
     # ── Copy Trading ────────────────────────────────────────────
 
     @work(thread=False)
+    async def _start_orchestrator(self) -> None:
+        """Start the strategy scanner after API is connected."""
+        for _ in range(15):
+            if self._client.connected:
+                break
+            await asyncio.sleep(1)
+        await self._orchestrator.start()
+        self.notify("Edge scanner active — scanning every 60s", title="Bot", timeout=5)
+
+    async def _handle_trade_signal(self, signal: TradeSignal) -> None:
+        """Handle an actionable trade signal from the orchestrator."""
+        entry = self.query_one(OrderEntryPanel)
+
+        # Pre-fill the order form
+        entry.set_price(signal.price)
+        try:
+            size_input = self.query_one("#size-input")
+            size_input.value = f"{signal.bet.shares:.1f}"
+        except Exception:
+            pass
+
+        if "YES" in signal.side:
+            entry._select_buy()
+        elif "NO" in signal.side:
+            entry._select_buy()  # buying NO token is still a buy
+
+        # Show notification with signal details
+        strategy_icon = {
+            "arbitrage": "ARB",
+            "crypto": "CRYPTO",
+            "weather": "WX",
+            "resolution": "EVENT",
+        }.get(signal.strategy, "EDGE")
+
+        entry.set_status(
+            f"[{strategy_icon}] {signal.side} {signal.bet.shares:.1f}sh @ {signal.price:.4f} "
+            f"| Edge {signal.edge_pct:+.1f}% | EV ${signal.bet.expected_value:+.2f}",
+            "bold magenta",
+        )
+
+        self.notify(
+            f"{signal.side} — Edge: {signal.edge_pct:+.1f}%\n"
+            f"${signal.bet.bet_size:.2f} → EV ${signal.bet.expected_value:+.2f}\n"
+            f"{signal.market_question[:50]}",
+            title=f"Signal: {strategy_icon}",
+            severity="warning",
+            timeout=15,
+        )
+
+    @work(thread=False)
     async def _start_copy_trader(self) -> None:
         """Start the copy trader background task."""
         if self._copy_trader:
@@ -510,6 +577,28 @@ class PolyTermApp(App):
             self._refresh_paper_positions()
         else:
             self._do_refresh_positions()
+
+    def action_scan_edges(self) -> None:
+        """Manually trigger an edge scan."""
+        self._run_manual_scan()
+
+    @work(thread=False)
+    async def _run_manual_scan(self) -> None:
+        entry = self.query_one(OrderEntryPanel)
+        entry.set_status("Scanning for edges...", "bold yellow")
+        signals = await self._orchestrator.scan_once()
+        actionable = [s for s in signals if s.is_actionable]
+
+        if actionable:
+            entry.set_status(
+                f"Found {len(actionable)} opportunities! Best: {actionable[0].edge_pct:+.1f}% edge",
+                "bold green",
+            )
+        else:
+            entry.set_status(
+                f"Scan complete — {len(signals)} signals, none actionable right now",
+                "dim",
+            )
 
     def action_clear_form(self) -> None:
         try:
